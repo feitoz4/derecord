@@ -1,0 +1,12 @@
+# Normaliza para LF no repositório; o checkout se adapta ao sistema.
+* text=auto
+
+# Estes PRECISAM ser LF mesmo baixados no Windows: rodam no Linux, e com CRLF
+# o bash quebra com erros incompreensíveis do tipo "$'\r': command not found".
+*.sh       text eol=lf
+*.service  text eol=lf
+*.conf     text eol=lf
+Caddyfile  text eol=lf
+
+*.png binary
+*.ico binary

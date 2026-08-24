@@ -1,0 +1,40 @@
+{
+  "name": "derecord-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "derecord para Windows",
+  "main": "main.js",
+  "scripts": {
+    "icon": "node make-icon.mjs",
+    "start": "electron .",
+    "dist": "node make-icon.mjs && electron-builder --win",
+    "verify": "electron verify.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.derecord.app",
+    "productName": "derecord",
+    "files": [
+      "main.js",
+      "preload.js",
+      "picker.html",
+      "build/icon.*",
+      "server.html"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "derecord"
+    }
+  }
+}

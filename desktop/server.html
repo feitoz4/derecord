@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Servidor</title>
+    <style>
+      :root {
+        --bg: #1a1b1e;
+        --panel: #202126;
+        --line: #26272c;
+        --txt: #dbdee1;
+        --dim: #949ba4;
+        --accent: #5b6bf0;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 14px;
+        padding: 26px;
+        background: var(--bg);
+        color: var(--txt);
+        font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+        user-select: none;
+      }
+      h1 { margin: 0; font-size: 18px; }
+      p { margin: 0; font-size: 12.5px; color: var(--dim); }
+      label { display: flex; flex-direction: column; gap: 6px; }
+      label span {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      input {
+        background: #141517;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 10px 12px;
+        color: var(--txt);
+        font: inherit;
+        outline: none;
+      }
+      input:focus { border-color: var(--accent); }
+      .err { color: #ff9b92; font-size: 12.5px; min-height: 18px; }
+      footer { display: flex; justify-content: flex-end; gap: 8px; }
+      button {
+        border: 0;
+        font: inherit;
+        padding: 9px 18px;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      .ghost { background: none; color: var(--dim); }
+      .ghost:hover { background: var(--panel); color: var(--txt); }
+      .primary { background: var(--accent); color: #fff; font-weight: 600; }
+      .primary:hover { filter: brightness(1.12); }
+    </style>
+  </head>
+  <body>
+    <h1>Endereço do servidor</h1>
+    <p>O endereço onde o derecord está hospedado. Todo mundo do grupo usa o mesmo.</p>
+
+    <label>
+      <span>Endereço</span>
+      <input id="url" placeholder="https://voz.seudominio.com" spellcheck="false" />
+    </label>
+
+    <div class="err" id="err"></div>
+
+    <footer>
+      <button class="ghost" id="cancel">Cancelar</button>
+      <button class="primary" id="save">Salvar e abrir</button>
+    </footer>
+
+    <script>
+      const input = document.getElementById('url')
+      const err = document.getElementById('err')
+
+      function save() {
+        let v = input.value.trim()
+        if (!v) return (err.textContent = 'Digite o endereço.')
+        if (!/^https?:\/\//i.test(v)) v = 'https://' + v
+
+        try {
+          const u = new URL(v)
+          // http só passa em localhost: fora disso o navegador bloqueia
+          // câmera e microfone, e o app ficaria inútil sem aviso.
+          const local = ['localhost', '127.0.0.1'].includes(u.hostname)
+          if (u.protocol !== 'https:' && !local) {
+            return (err.textContent = 'Precisa ser https — sem isso o microfone e a câmera não funcionam.')
+          }
+          window.settings.save(u.origin)
+        } catch {
+          err.textContent = 'Endereço inválido.'
+        }
+      }
+
+      document.getElementById('save').onclick = save
+      document.getElementById('cancel').onclick = () => window.settings.save(null)
+      input.addEventListener('input', () => (err.textContent = ''))
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') save()
+        if (e.key === 'Escape') window.settings.save(null)
+      })
+
+      // Depois de ligar os botões: se a ponte falhar, a janela ainda responde.
+      Promise.resolve(window.settings?.current?.())
+        .then((u) => {
+          input.value = u || ''
+          input.focus()
+          input.select()
+        })
+        .catch(() => {})
+    </script>
+  </body>
+</html>

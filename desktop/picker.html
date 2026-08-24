@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Compartilhar tela</title>
+    <style>
+      :root {
+        --bg: #1a1b1e;
+        --panel: #202126;
+        --line: #26272c;
+        --txt: #dbdee1;
+        --dim: #949ba4;
+        --accent: #5b6bf0;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        color: var(--txt);
+        font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+        user-select: none;
+      }
+      header {
+        padding: 16px 20px 10px;
+        flex-shrink: 0;
+      }
+      h1 { margin: 0; font-size: 17px; }
+      p { margin: 3px 0 0; font-size: 12.5px; color: var(--dim); }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 10px 20px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .tab {
+        border: 0;
+        background: none;
+        color: var(--dim);
+        font: inherit;
+        padding: 8px 14px;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+      }
+      .tab.is-on { color: var(--txt); border-bottom-color: var(--accent); }
+      .grid {
+        flex: 1;
+        overflow-y: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 12px;
+        padding: 16px 20px;
+      }
+      .src {
+        border: 2px solid transparent;
+        border-radius: 10px;
+        background: var(--panel);
+        padding: 0;
+        overflow: hidden;
+        cursor: pointer;
+        text-align: left;
+        color: inherit;
+        font: inherit;
+      }
+      .src:hover, .src:focus-visible { border-color: var(--accent); outline: none; }
+      .src img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
+        background: #000;
+      }
+      .src span {
+        display: block;
+        padding: 8px 10px;
+        font-size: 12.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      footer {
+        flex-shrink: 0;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid var(--line);
+      }
+      button.ghost {
+        border: 0;
+        background: none;
+        color: var(--dim);
+        font: inherit;
+        padding: 9px 16px;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      button.ghost:hover { background: var(--panel); color: var(--txt); }
+      .empty { padding: 40px; text-align: center; color: var(--dim); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Compartilhar tela</h1>
+      <p>No Windows o som do que está na tela vai junto.</p>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab is-on" data-kind="screen">Telas</button>
+      <button class="tab" data-kind="window">Janelas</button>
+    </nav>
+
+    <div class="grid" id="grid"></div>
+
+    <footer>
+      <button class="ghost" id="cancel">Cancelar</button>
+    </footer>
+
+    <script>
+      const grid = document.getElementById('grid')
+      let all = []
+      let kind = 'screen'
+
+      function render() {
+        const list = all.filter((s) => (kind === 'screen' ? s.isScreen : !s.isScreen))
+        grid.innerHTML = ''
+
+        if (!list.length) {
+          const p = document.createElement('p')
+          p.className = 'empty'
+          p.textContent = kind === 'screen' ? 'Nenhuma tela encontrada.' : 'Nenhuma janela aberta.'
+          return grid.append(p)
+        }
+
+        for (const s of list) {
+          const btn = document.createElement('button')
+          btn.className = 'src'
+          btn.onclick = () => window.picker.choose(s.id)
+
+          const img = document.createElement('img')
+          img.src = s.thumbnail
+          const label = document.createElement('span')
+          label.textContent = s.name
+
+          btn.append(img, label)
+          grid.append(btn)
+        }
+      }
+
+      for (const tab of document.querySelectorAll('.tab')) {
+        tab.onclick = () => {
+          document.querySelector('.tab.is-on').classList.remove('is-on')
+          tab.classList.add('is-on')
+          kind = tab.dataset.kind
+          render()
+        }
+      }
+
+      document.getElementById('cancel').onclick = () => window.picker.choose(null)
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') window.picker.choose(null)
+      })
+
+      window.picker.sources().then((s) => {
+        all = s
+        render()
+      })
+    </script>
+  </body>
+</html>

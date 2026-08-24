@@ -1,0 +1,11 @@
+node_modules/
+dist/
+
+# Imagens enviadas no chat: dados de quem usa, não do projeto.
+uploads/
+
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
