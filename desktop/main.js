@@ -18,7 +18,8 @@ const fs = require('node:fs')
 if (!app.requestSingleInstanceLock()) app.quit()
 
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json')
-const DEFAULT_URL = '' // vazio na primeira execução: o app pergunta
+// Já vem apontando para o servidor do grupo; a primeira execução só confirma.
+const DEFAULT_URL = 'https://feitoz4.github.io/derecord/'
 
 function loadConfig() {
   try {
@@ -299,8 +300,8 @@ app.whenReady().then(async () => {
   setupPermissions()
   setupScreenShare()
 
-  // Primeira execução: sem endereço não há o que carregar.
-  if (!config.url) {
+  // Primeira execução: confirma o endereço antes de abrir a janela.
+  if (!fs.existsSync(CONFIG_FILE)) {
     const ok = await promptServer()
     if (!ok) return app.exit(0)
   }

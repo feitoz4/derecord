@@ -94,7 +94,9 @@
           if (u.protocol !== 'https:' && !local) {
             return (err.textContent = 'Precisa ser https — sem isso o microfone e a câmera não funcionam.')
           }
-          window.settings.save(u.origin)
+          // Guarda o caminho junto, não só a origem: no GitHub Pages o app
+          // vive em /<repositorio>/, e só a origem cairia num 404.
+          window.settings.save(u.origin + u.pathname)
         } catch {
           err.textContent = 'Endereço inválido.'
         }

@@ -16,8 +16,9 @@ npm install
 npm start
 ```
 
-Na primeira execução ele pergunta o endereço do servidor. Para testar contra o
-servidor local, use `http://localhost:5173`.
+Na primeira execução ele confirma o endereço do servidor, já preenchido com
+`https://feitoz4.github.io/derecord/`. Para testar contra o servidor local,
+troque para `http://localhost:5173`.
 
 ## Conferir se tudo funciona
 
@@ -37,8 +38,8 @@ npm run dist
 Sai em `dist/derecord Setup 0.1.0.exe`. É um NSIS comum: instala por usuário,
 sem pedir administrador, e deixa escolher a pasta.
 
-Mande esse `.exe` pro pessoal do grupo. Na primeira abertura cada um digita o
-endereço do servidor uma vez.
+Mande esse `.exe` pro pessoal do grupo. Na primeira abertura cada um só
+confirma o endereço, que já vem preenchido.
 
 ## Por que Electron e não Tauri
 
@@ -71,6 +72,13 @@ npm run icon
 
 `make-icon.mjs` desenha por matemática, com supersampling, e escreve o PNG e o
 ICO na mão. Para mudar as cores, é o gradiente em `shade()`.
+
+## Endereço com caminho
+
+O app guarda o endereço **com o caminho**, não só o domínio. No GitHub Pages o
+site vive em `/<repositorio>/`, e guardar só a origem levaria a um 404. As
+permissões de mídia, essas sim, continuam comparadas por origem — é assim que
+o navegador as trata.
 
 ## O que não foi testado
 
