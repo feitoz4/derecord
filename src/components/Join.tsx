@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Room } from '../lib/room'
 import { isSecure } from '../lib/media'
+import { configured } from '../lib/supabase'
 
 const NAME_KEY = 'derecord:name'
 
@@ -49,9 +50,21 @@ export function Join({ room }: { room: Room }) {
           />
         </label>
 
-        <button type="submit" className="btn" disabled={!name.trim() || !secure}>
+        <button
+          type="submit"
+          className="btn"
+          disabled={!name.trim() || !secure || !configured}
+        >
           Entrar
         </button>
+
+        {!configured && (
+          <p className="warn">
+            Faltam as variáveis do Supabase. Copie <code>.env.example</code> para{' '}
+            <code>.env</code>, preencha com os dados do seu projeto e reinicie o{' '}
+            <code>npm run dev</code>.
+          </p>
+        )}
 
         {!secure && (
           <p className="warn">

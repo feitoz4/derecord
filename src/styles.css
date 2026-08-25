@@ -1555,3 +1555,11 @@ button:disabled {
   background: var(--warn);
   color: #2a1a00;
 }
+
+.warn code {
+  background: #00000040;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}

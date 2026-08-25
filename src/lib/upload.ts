@@ -1,3 +1,5 @@
+import { supabase } from './supabase'
+
 export type Attachment = { url: string; w: number; h: number; name: string }
 
 export const MAX_UPLOAD = 8 * 1024 * 1024
@@ -55,22 +57,31 @@ async function shrink(file: File): Promise<{ blob: Blob; w: number; h: number; t
   return blob ? { blob, w: nw, h: nh, type } : { blob: file, w, h, type: file.type }
 }
 
+const EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
+
 export async function uploadImage(file: File): Promise<Attachment> {
   if (!isImage(file)) throw new Error('Só imagem (png, jpg, gif, webp).')
 
   const { blob, w, h, type } = await shrink(file)
   if (blob.size > MAX_UPLOAD) throw new Error('Imagem acima de 8 MB, mesmo reduzida.')
 
-  const res = await fetch('/upload', {
-    method: 'POST',
-    headers: { 'content-type': type },
-    body: blob,
+  // O nome no bucket é sorteado: o nome original vai só na mensagem, e assim
+  // dois arquivos iguais nunca colidem.
+  const path = `${crypto.randomUUID()}.${EXT[type] ?? 'jpg'}`
+
+  const { error } = await supabase.storage.from('images').upload(path, blob, {
+    contentType: type,
+    cacheControl: '31536000',
   })
+  if (error) throw new Error(`Falha no envio da imagem: ${error.message}`)
 
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body.error || 'Falha no envio da imagem.')
-
-  return { url: body.url, w, h, name: file.name }
+  const { data } = supabase.storage.from('images').getPublicUrl(path)
+  return { url: data.publicUrl, w, h, name: file.name }
 }
 
 /** Pega a primeira imagem de um paste ou de um arrastar-e-soltar. */

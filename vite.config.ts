@@ -1,16 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
+// No GitHub Pages o site vive em /<repositorio>/, não na raiz. Em dev fica na
+// raiz mesmo — por isso o base muda conforme o comando.
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  server: {
-    port: 5173,
-    host: true,
-    proxy: {
-      '/ws': { target: 'ws://localhost:8787', ws: true },
-      '/upload': { target: 'http://localhost:8787' },
-      '/uploads': { target: 'http://localhost:8787' },
-    },
-  },
+  base: command === 'build' ? '/derecord/' : '/',
+  server: { port: 5173, host: true },
   build: { outDir: 'dist' },
-})
+}))

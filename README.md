@@ -1,7 +1,7 @@
 # derecord
 
 Dois canais para um grupo: **#chat** (texto) e **voz** (chamada com vídeo e
-tela). WebRTC em **mesh** (peer-to-peer, sem servidor de mídia) — o backend só
+tela). WebRTC em **mesh** (peer-to-peer, sem servidor de mídia) — o Supabase só
 faz a apresentação entre os participantes.
 
 Estar online no grupo e estar na chamada são coisas separadas: o mesh só conecta
@@ -10,22 +10,48 @@ quem entrou no canal de voz.
 Dimensionado para **até 6 pessoas** — dentro disso o mesh é confortável e não
 precisa de servidor de mídia.
 
-- **Hospedar:** [`deploy/README.md`](deploy/README.md) — Oracle Cloud Always
-  Free, com HTTPS e TURN próprios, de graça.
+- **Hospedar:** GitHub Pages (site) + Supabase (sinalização, chat e imagens).
+  Tudo no plano grátis, sem servidor para manter — veja abaixo.
 - **App para Windows:** [`desktop/README.md`](desktop/README.md) — Electron,
   com seletor de tela próprio e ícone na bandeja.
 
+## Começar
+
+**1. Crie um projeto no Supabase** (grátis, sem cartão) em
+<https://supabase.com>. Anote a URL e a chave `anon` em
+*Project Settings → Data API*.
+
+**2. Rode o schema.** No painel, *SQL Editor*, cole
+[`supabase/schema.sql`](supabase/schema.sql) inteiro e execute. Isso cria a
+tabela de mensagens, liga o realtime e prepara o bucket de imagens.
+
+**3. Configure e suba:**
+
 ```bash
 npm install
+cp .env.example .env   # preencha com a URL e a chave
 npm run dev
 ```
 
 Abre em `http://localhost:5173`. Para testar sozinho, abra duas abas.
 
-O front fica na `5173` (Vite) e a sinalização na `8787`. As duas portas são
-fixas no script de `dev` de propósito: sem isso o servidor pode tomar a porta
-do Vite e passar a servir um `dist/` antigo, e você fica olhando pra uma versão
-velha do app sem entender por quê.
+**4. Publique.**
+
+```bash
+npm run deploy
+```
+
+Compila e empurra o resultado para a branch `gh-pages`. Uma vez só, no
+repositório: *Settings → Pages* → **Deploy from a branch** → `gh-pages` / `root`.
+
+As chaves entram no build a partir do seu `.env` local — por isso quem publica
+precisa dele preenchido.
+
+> A chave `anon` é pública por natureza: ela vai dentro do JavaScript que roda
+> no navegador de todo mundo. Quem protege os dados são as regras de RLS do
+> `schema.sql`, não o sigilo da chave. Como não há contas, **quem tem o
+> endereço entra** — se quiser algo menos exposto, use um nome de sala difícil
+> de adivinhar (`?sala=...`).
 
 ## O que tem
 
@@ -48,7 +74,6 @@ velha do app sem entender por quê.
 | Menções com `@` | autocomplete, `@todos`, destaque de quem foi citado |
 | Anexar imagem | botão, colar (Ctrl+V) ou arrastar pro chat |
 | Reconexão automática | se o WebSocket cair |
-| TURN com credencial temporária | assinada pelo servidor, expira em 12h |
 
 Atalhos: `Ctrl+Shift+M` microfone, `Ctrl+Shift+V` câmera, `F` tela cheia,
 `Esc` recolhe o palco.
@@ -82,18 +107,16 @@ Se você mexer nessa ordem, tem que mexer nos dois lados. É contrato.
 
 ### Imagens
 
-O arquivo **não** trafega pelo WebSocket. O cliente reduz a imagem quando ela é
-maior que 1920px (GIF passa intacto, senão perderia a animação), faz `POST
-/upload` com os bytes crus no corpo — sem multipart, sem dependência — e o
-servidor grava em `uploads/` e devolve a URL.
+O arquivo **não** trafega pelo canal de tempo real. O cliente reduz a imagem
+quando ela é maior que 1920px (GIF passa intacto, senão perderia a animação) e
+sobe direto para o **Supabase Storage**, que devolve a URL pública.
 
 A mensagem carrega só `{url, w, h}`. As medidas importam: é com elas que o chat
 reserva a altura certa antes da imagem carregar, senão a lista "pula" enquanto
 as fotos vão chegando.
 
-O servidor só aceita `image/*` até 8 MB, e ao publicar a mensagem valida que a
-URL casa com `/uploads/<uuid>.<ext>` — assim ninguém injeta um endereço
-arbitrário no lugar.
+O bucket recusa no servidor o que não for `image/*` até 8 MB — mesmo que
+alguém burle o cliente.
 
 ### Menções
 
@@ -112,15 +135,15 @@ SFU (LiveKit, mediasoup), que recebe uma vez e redistribui.
 Como o limite aqui é 6, nada disso é necessário: o servidor não vê um byte de
 áudio ou vídeo, e por isso cabe folgado na menor VM gratuita que existir.
 
-### TURN
+### TURN (ainda não configurado)
 
-Cerca de 10 a 20% das conexões não fecham em P2P direto (NAT simétrico), e
-precisam de um relay. O `setup.sh` sobe um coturn junto com o app.
+Cerca de 10 a 20% das conexões não fecham em P2P direto (NAT simétrico) e
+precisam de um relay. Hoje o app usa só STUN público, o que resolve a maioria
+dos casos.
 
-O segredo do TURN **nunca vai para o cliente**. O servidor assina uma
-credencial temporária no formato que o coturn espera (usuário = data de
-expiração, senha = HMAC-SHA1 dela) e manda no `welcome`. Se vazar, vale por
-12 horas em vez de para sempre.
+Se alguém do grupo não conseguir conectar, o caminho é a **Cloudflare Realtime
+TURN**, que tem 1000 GB/mês grátis — sobra muito para 6 pessoas. É preencher
+`Room.iceServers` com as credenciais que a API dela devolve.
 
 ### Volume acima de 100%
 
@@ -144,7 +167,7 @@ oposto nos dois lados.
 ## Estrutura
 
 ```
-server.js              sinalização (WebSocket) + serve o build
+supabase/schema.sql    tabela de mensagens, RLS e bucket de imagens
 src/lib/rtc.ts         RTCPeerConnection, transceivers, perfect negotiation
 src/lib/audio.ts       volume por pessoa, boost, medidor de voz
 src/lib/media.ts       getUserMedia / getDisplayMedia
@@ -159,16 +182,9 @@ npm run build
 npm start
 ```
 
-Sobe tudo numa porta só (`8787`), front e sinalização juntos.
-
-Dois avisos que valem o tempo:
 
 **HTTPS é obrigatório.** Fora de `localhost`, o navegador bloqueia câmera e
-microfone sem TLS. Ponha um Caddy ou nginx na frente — com Caddy é uma linha.
-
-**TURN.** O STUN público resolve a maioria dos casos, mas quem estiver atrás de
-NAT simétrico (uns 10–20% das redes) não conecta sem um TURN. Suba um `coturn`
-no mesmo VPS e adicione em `ICE_SERVERS`, em [`src/lib/rtc.ts`](src/lib/rtc.ts).
+microfone sem TLS. O GitHub Pages já serve em HTTPS, então isso vem resolvido.
 
 ## Limite
 
@@ -177,5 +193,5 @@ Mesh é N-1 streams saindo de cada pessoa. Na prática:
 - **até ~6 pessoas em call** — tranquilo
 - **8+** — o upload de quem tem internet fraca começa a sofrer
 
-Passar disso pede um SFU (LiveKit, mediasoup), e aí o servidor deixa de ser só
-sinalização. Para um grupo, mesh é o caminho certo.
+Passar disso pede um SFU (LiveKit, mediasoup), e aí passa a existir um servidor
+processando mídia. Para um grupo, mesh é o caminho certo.

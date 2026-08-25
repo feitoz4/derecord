@@ -3,6 +3,11 @@ import { RemoteAudio, LocalMeter, setLevelListener, MAX_GAIN } from './audio'
 import { getMic, getCam, getScreen, stopStream, mediaErrorMessage } from './media'
 import { findMentions, mentionsMe } from './mentions'
 import type { Attachment } from './upload'
+import { supabase, type MessageRow } from './supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+
+/** O que cada pessoa publica no presence do canal. */
+type Presence = { name: string; voice: boolean; state: PeerState }
 
 export type PeerState = { mic: boolean; cam: boolean; screen: boolean }
 
@@ -89,10 +94,9 @@ export class Room {
   /** STUN/TURN vêm do servidor: a credencial de TURN é temporária. */
   iceServers: RTCIceServer[] = FALLBACK_ICE
 
-  private ws: WebSocket | null = null
+  private channel: RealtimeChannel | null = null
   private listeners = new Set<() => void>()
   private volumes = loadVolumes()
-  private reconnectTimer: number | null = null
   private closing = false
 
   constructor() {
@@ -114,136 +118,190 @@ export class Room {
 
   // -------- conexão com o grupo --------------------------------------------
 
-  connect(name: string, roomId = 'geral') {
+  async connect(name: string, roomId = 'geral') {
     this.name = name
     this.roomId = roomId
     this.closing = false
-    this.status = this.meId ? 'reconnecting' : 'connecting'
+    this.status = 'connecting'
+    // Sem servidor próprio, a identidade nasce aqui. É ela que decide quem
+    // oferece primeiro no WebRTC, então precisa ser estável na sessão.
+    if (!this.meId) this.meId = crypto.randomUUID()
     this.emit()
 
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/ws`)
-    this.ws = ws
+    const channel = supabase.channel(`room:${roomId}`, {
+      config: {
+        presence: { key: this.meId },
+        broadcast: { self: false },
+      },
+    })
+    this.channel = channel
 
-    ws.onopen = () => this.send({ t: 'join', name, room: roomId })
-    ws.onmessage = (ev) => this.onMessage(JSON.parse(ev.data))
+    // Presence substitui o peer-join/leave/voice/state de uma vez só:
+    // o servidor manda o estado inteiro e eu comparo com o que tenho.
+    channel.on('presence', { event: 'sync' }, () => this.syncPresence())
 
-    ws.onclose = () => {
-      if (this.closing) return
-      this.status = 'reconnecting'
-      // Derruba o mesh; quem estiver na voz se reapresenta depois do rejoin.
-      this.peers.forEach((p) => this.dropConn(p))
-      this.peers.clear()
-      this.emit()
-      this.reconnectTimer = window.setTimeout(() => this.connect(name, roomId), 1500)
-    }
+    channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
+      if (payload?.to !== this.meId) return
+      const p = this.peers.get(payload.from)
+      // O sinal pode chegar antes do presence do outro lado ser processado.
+      if (p && !p.conn && this.inVoice) this.ensureConn(p)
+      void p?.conn?.handleSignal(payload.data as SignalPayload)
+    })
 
-    ws.onerror = () => ws.close()
+    channel.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `room=eq.${roomId}` },
+      ({ new: row }) => this.onChat(row as MessageRow),
+    )
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await this.loadHistory()
+        await channel.track(this.presence())
+        this.status = 'connected'
+        this.emit()
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        // O cliente do Supabase reconecta sozinho; aqui é só o aviso na tela.
+        if (!this.closing) this.status = 'reconnecting'
+        this.emit()
+      }
+    })
   }
 
   disconnect() {
     this.closing = true
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.leaveVoice()
     this.peers.clear()
-    this.ws?.close()
-    this.ws = null
+    void this.channel?.unsubscribe()
+    this.channel = null
     this.status = 'idle'
     this.meId = ''
     this.emit()
   }
 
-  private send(msg: unknown) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg))
+  private presence(): Presence {
+    return {
+      name: this.name,
+      voice: this.inVoice,
+      state: { mic: this.micOn, cam: this.camOn, screen: this.screenOn },
+    }
   }
 
-  private onMessage(msg: any) {
-    switch (msg.t) {
-      case 'welcome': {
-        this.meId = msg.id
-        this.status = 'connected'
-        this.chat = msg.history || []
-        if (msg.iceServers?.length) this.iceServers = msg.iceServers
-        msg.peers.forEach((p: any) => this.addPeer(p))
-        // Se caiu e voltou enquanto estava na voz, refaz o mesh.
-        if (this.inVoice) {
-          this.send({ t: 'voice', join: true })
-          this.broadcastState()
-          this.peers.forEach((p) => p.voice && this.ensureConn(p))
-        }
-        break
+  /** Republica meu estado (voz, microfone, câmera, tela) para o grupo. */
+  private publish() {
+    void this.channel?.track(this.presence())
+  }
+
+  private signalTo(to: string, data: SignalPayload) {
+    void this.channel?.send({
+      type: 'broadcast',
+      event: 'signal',
+      payload: { to, from: this.meId, data },
+    })
+  }
+
+  /**
+   * O presence chega inteiro a cada mudança, então em vez de tratar eventos
+   * de entrada e saída eu comparo a lista atual com a que tenho e ajusto.
+   */
+  private syncPresence() {
+    const state = this.channel?.presenceState<Presence>() ?? {}
+    const vistos = new Set<string>()
+
+    for (const [id, metas] of Object.entries(state)) {
+      const meta = metas[0]
+      if (!meta || id === this.meId) continue
+      vistos.add(id)
+
+      const existente = this.peers.get(id)
+      if (!existente) {
+        this.addPeer(id, meta)
+        continue
       }
 
-      case 'peer-join':
-        this.addPeer(msg.peer)
-        break
+      existente.name = meta.name
+      existente.state = meta.state
 
-      case 'peer-leave': {
-        const p = this.peers.get(msg.id)
-        if (p) {
-          this.dropConn(p)
-          this.peers.delete(msg.id)
-        }
-        if (this.pinned === msg.id) this.pinned = null
-        break
-      }
-
-      case 'peer-voice': {
-        const p = this.peers.get(msg.id)
-        if (!p) break
-        p.voice = msg.voice
-        p.state = msg.state
-        if (p.voice) {
-          if (this.inVoice) this.ensureConn(p)
+      if (existente.voice !== meta.voice) {
+        existente.voice = meta.voice
+        if (meta.voice) {
+          if (this.inVoice) this.ensureConn(existente)
         } else {
-          this.dropConn(p)
-          if (this.pinned === p.id) this.pinned = null
+          this.dropConn(existente)
+          if (this.pinned === id) this.pinned = null
         }
-        break
-      }
-
-      case 'peer-state': {
-        const p = this.peers.get(msg.id)
-        if (p) p.state = msg.state
-        break
-      }
-
-      case 'signal': {
-        const p = this.peers.get(msg.from)
-        // Sinal pode chegar antes de eu processar o peer-voice do outro lado.
-        if (p && !p.conn && this.inVoice) this.ensureConn(p)
-        void p?.conn?.handleSignal(msg.data as SignalPayload)
-        return // handleSignal emite depois, via onChange
-      }
-
-      case 'chat': {
-        const m = msg as ChatMsg
-        this.chat = [...this.chat, m].slice(-200)
-        if (m.from !== this.meId) {
-          this.unread++
-          if (mentionsMe(m.mentions, this.name)) this.unreadMentions++
-        }
-        break
       }
     }
+
+    // Quem sumiu do presence saiu do grupo.
+    for (const [id, p] of this.peers) {
+      if (vistos.has(id)) continue
+      this.dropConn(p)
+      this.peers.delete(id)
+      if (this.pinned === id) this.pinned = null
+    }
+
     this.emit()
   }
 
-  private addPeer(raw: { id: string; name: string; voice: boolean; state: PeerState }) {
-    if (this.peers.has(raw.id)) return
-    const saved = this.volumes[raw.name] ?? { volume: 1, muted: false }
+  private addPeer(id: string, meta: Presence) {
+    const saved = this.volumes[meta.name] ?? { volume: 1, muted: false }
     const p: Participant = {
-      id: raw.id,
-      name: raw.name,
-      voice: raw.voice,
-      state: raw.state,
+      id,
+      name: meta.name,
+      voice: meta.voice,
+      state: meta.state,
       conn: null,
       audio: null,
       volume: saved.volume,
       localMuted: saved.muted,
     }
-    this.peers.set(raw.id, p)
+    this.peers.set(id, p)
     if (this.inVoice && p.voice) this.ensureConn(p)
+  }
+
+  // -------- chat -------------------------------------------------------------
+
+  private static toMsg(row: MessageRow): ChatMsg {
+    return {
+      id: row.id,
+      from: row.author_id,
+      name: row.name,
+      text: row.text,
+      ts: new Date(row.created_at).getTime(),
+      image: row.image,
+      replyTo: row.reply_to,
+      mentions: row.mentions,
+    }
+  }
+
+  private async loadHistory() {
+    // Busca as mais recentes e inverte: o índice do banco é por data desc.
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room', this.roomId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    if (error) {
+      this.error = `Não consegui carregar o histórico: ${error.message}`
+    } else if (data) {
+      this.chat = data.reverse().map(Room.toMsg)
+    }
+    this.emit()
+  }
+
+  private onChat(row: MessageRow) {
+    const m = Room.toMsg(row)
+    // O insert também volta pra quem escreveu; não duplica se já estiver lá.
+    if (this.chat.some((x) => x.id === m.id)) return
+    this.chat = [...this.chat, m].slice(-200)
+    if (m.from !== this.meId) {
+      this.unread++
+      if (mentionsMe(m.mentions, this.name)) this.unreadMentions++
+    }
+    this.emit()
   }
 
   // -------- canal de voz ----------------------------------------------------
@@ -267,8 +325,7 @@ export class Room {
 
     this.inVoice = true
     this.joiningVoice = false
-    this.send({ t: 'voice', join: true })
-    this.broadcastState()
+    this.publish()
     this.peers.forEach((p) => p.voice && this.ensureConn(p))
     this.emit()
   }
@@ -287,7 +344,7 @@ export class Room {
     this.inVoice = false
     this.pinned = null
 
-    this.send({ t: 'voice', join: false })
+    this.publish()
     this.emit()
   }
 
@@ -299,7 +356,7 @@ export class Room {
     p.conn = new PeerConn(
       p.id,
       this.meId < p.id, // polite/impolite: determinístico e oposto dos dois lados
-      (data) => this.send({ t: 'signal', to: p.id, data }),
+      (data) => this.signalTo(p.id, data),
       () => this.onPeerChange(p.id),
       this.iceServers,
     )
@@ -338,10 +395,6 @@ export class Room {
     this.peers.forEach((p) => p.conn && fn(p.conn))
   }
 
-  private broadcastState() {
-    this.send({ t: 'state', mic: this.micOn, cam: this.camOn, screen: this.screenOn })
-  }
-
   // -------- controles de mídia ---------------------------------------------
 
   /** Mute é `enabled = false`: para o áudio na hora e mantém a conexão quente. */
@@ -364,7 +417,7 @@ export class Room {
       this.micOn = !this.micOn
       this.micStream.getAudioTracks().forEach((t) => (t.enabled = this.micOn))
     }
-    this.broadcastState()
+    this.publish()
     this.emit()
   }
 
@@ -389,7 +442,7 @@ export class Room {
         return
       }
     }
-    this.broadcastState()
+    this.publish()
     this.emit()
   }
 
@@ -419,7 +472,7 @@ export class Room {
         this.error = mediaErrorMessage(err)
       }
     }
-    this.broadcastState()
+    this.publish()
     this.emit()
   }
 
@@ -432,7 +485,7 @@ export class Room {
     this.screenStream = null
     this.screenOn = false
     if (this.pinned === this.meId) this.pinned = null
-    this.broadcastState()
+    this.publish()
     this.emit()
   }
 
@@ -490,18 +543,30 @@ export class Room {
     this.emit()
   }
 
-  sendChat(text: string, image?: Attachment | null) {
+  async sendChat(text: string, image?: Attachment | null) {
     const trimmed = text.trim()
     if (!trimmed && !image) return
-    this.send({
-      t: 'chat',
-      text: trimmed,
-      image: image ? { url: image.url, w: image.w, h: image.h } : null,
-      replyTo: this.replyTo,
-      mentions: findMentions(trimmed, this.knownNames),
-    })
+
+    const replyTo = this.replyTo
+    // Limpa antes de gravar: a resposta some do compositor na hora, e a
+    // mensagem volta pelo realtime como qualquer outra.
     this.replyTo = null
     this.emit()
+
+    const { error } = await supabase.from('messages').insert({
+      room: this.roomId,
+      author_id: this.meId,
+      name: this.name,
+      text: trimmed,
+      image: image ? { url: image.url, w: image.w, h: image.h } : null,
+      reply_to: replyTo,
+      mentions: findMentions(trimmed, this.knownNames),
+    })
+
+    if (error) {
+      this.error = `Não consegui enviar: ${error.message}`
+      this.emit()
+    }
   }
 
   setReplyTo(msg: ChatMsg | null) {

@@ -4,20 +4,21 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n server,client -c magenta,cyan \"node server.js --port 8787 --no-static\" \"vite\"",
+    "dev": "vite",
     "build": "vite build",
-    "start": "node server.js"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "deploy": "npm run build && node deploy.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "ws": "^8.18.0"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
   }
