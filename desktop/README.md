@@ -64,14 +64,22 @@ são negadas. Links externos abrem no navegador padrão, não dentro do app.
 
 ## O ícone
 
-Gerado por código, sem dependência de design:
+Feito a partir de `build/source.png` (a logo da Nearby):
 
 ```bash
 npm run icon
 ```
 
-`make-icon.mjs` desenha por matemática, com supersampling, e escreve o PNG e o
-ICO na mão. Para mudar as cores, é o gradiente em `shade()`.
+`make-icon.mjs` decodifica o PNG com zlib, acha a caixa do que realmente tem
+desenho, recorta, centraliza, reduz com filtro de caixa e compõe sobre um
+quadrado de cantos arredondados. Sem dependência nenhuma.
+
+O recorte não é capricho: a logo original tinha o símbolo em (77,205) num
+quadro de 935×935 — fora de centro e com margem sobrando. No tamanho de um
+ícone de barra de tarefas isso viraria um borrão torto num canto.
+
+Para trocar a logo, substitua `build/source.png` e rode de novo. O fundo e o
+arredondamento estão em `BG` e `RADIUS`, no topo do arquivo.
 
 ## Endereço com caminho
 
