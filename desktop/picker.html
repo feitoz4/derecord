@@ -2,6 +2,8 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
     <title>Compartilhar tela</title>
     <style>
       :root {
@@ -163,10 +165,21 @@
         if (e.key === 'Escape') window.picker.choose(null)
       })
 
-      window.picker.sources().then((s) => {
-        all = s
-        render()
-      })
+      // Se a ponte com o processo principal falhar, mostra o motivo em vez de
+      // deixar a janela vazia sem explicação.
+      Promise.resolve(window.picker?.sources?.())
+        .then((s) => {
+          if (!Array.isArray(s)) throw new Error('sem resposta do aplicativo')
+          all = s
+          render()
+        })
+        .catch((err) => {
+          grid.innerHTML = ''
+          const p = document.createElement('p')
+          p.className = 'empty'
+          p.textContent = `Não consegui listar as telas: ${err.message}`
+          grid.append(p)
+        })
     </script>
   </body>
 </html>

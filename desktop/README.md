@@ -88,13 +88,32 @@ site vive em `/<repositorio>/`, e guardar só a origem levaria a um 404. As
 permissões de mídia, essas sim, continuam comparadas por origem — é assim que
 o navegador as trata.
 
-## O que não foi testado
+## Se a instalação do Electron falhar
 
-O app foi escrito e revisado, mas **não chegou a rodar**: o ambiente onde foi
-desenvolvido não conseguiu baixar o binário do Electron. O `npm run verify`
-existe justamente por isso — rode-o na sua máquina antes de confiar no
-instalador.
+Sintoma: `Electron failed to install correctly`, e `node_modules/electron/dist`
+com um arquivo só.
 
-Já verificados fora do Electron: `picker.html` e `server.html` (carregados num
-navegador com a ponte simulada, incluindo a validação de endereço), o ícone
-(PNG e ICO válidos) e a sintaxe de todos os arquivos.
+O download costuma estar certo — o que falha é a **extração**. O zip de ~110 MB
+fica em `%LOCALAPPDATA%\electron\Cache`, e extrair milhares de arquivos dentro
+de uma pasta sincronizada pelo OneDrive trava no meio. Confira antes de baixar
+de novo:
+
+```powershell
+Get-ChildItem -Recurse "$env:LOCALAPPDATA\electron\Cache" | Select Name, Length
+```
+
+Se o zip estiver lá e inteiro, extraia na mão:
+
+```powershell
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip  = (Get-ChildItem -Recurse "$env:LOCALAPPDATA\electron\Cache" -Filter *.zip)[0].FullName
+$dist = "$PWD
+ode_modules\electron\dist"
+Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
+[IO.Compression.ZipFile]::ExtractToDirectory($zip, $dist)
+Set-Content "$PWD
+ode_modules\electron\path.txt" "electron.exe" -NoNewline
+```
+
+A causa de fundo é o projeto morar no OneDrive. Movê-lo para fora (`C:\dev\`,
+por exemplo) resolve isso e outros atritos com `node_modules`.

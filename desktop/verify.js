@@ -4,7 +4,7 @@
  *
  *   npm run verify
  */
-const { app, session, BrowserWindow, Tray, globalShortcut, desktopCapturer, nativeImage } = require('electron')
+const { app, ipcMain, session, BrowserWindow, Tray, globalShortcut, desktopCapturer, nativeImage } = require('electron')
 const path = require('node:path')
 
 app.whenReady().then(async () => {
@@ -23,6 +23,12 @@ app.whenReady().then(async () => {
   // o atalho global registra?
   out.shortcut = globalShortcut.register('CommandOrControl+Shift+F24', () => {})
   globalShortcut.unregisterAll()
+
+  // Em uso real esse handler só existe durante um compartilhamento; aqui ele
+  // é registrado à mão para o picker ter o que consumir.
+  ipcMain.handle('picker:sources', () => [
+    { id: 'screen:0:0', name: 'Tela de teste', thumbnail: '', isScreen: true },
+  ])
 
   // janela + preload carregam o picker sem erro?
   const w = new BrowserWindow({
