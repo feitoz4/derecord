@@ -95,6 +95,13 @@ export function Sidebar({
   setView: (v: View) => void
 }) {
   const [copied, setCopied] = useState(false)
+  const [editando, setEditando] = useState(false)
+  const [rascunho, setRascunho] = useState('')
+
+  const salvarNome = () => {
+    setEditando(false)
+    void room.setName(rascunho)
+  }
   const voice = room.voicePeers.sort((a, b) => a.name.localeCompare(b.name))
   const total = voice.length + (room.inVoice ? 1 : 0)
 
@@ -192,7 +199,36 @@ export function Sidebar({
 
         <div className="userbar__me">
           <Avatar name={room.name} size={28} />
-          <span className="userbar__name">{room.name}</span>
+          {editando ? (
+            <input
+              className="userbar__input"
+              value={rascunho}
+              maxLength={32}
+              autoFocus
+              onChange={(e) => setRascunho(e.target.value)}
+              onBlur={() => salvarNome()}
+              onKeyDown={(e) => {
+                // Enter grava direto, sem passar pelo blur: depender só do
+                // blur deixa o campo preso se o foco não se comportar.
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  salvarNome()
+                }
+                if (e.key === 'Escape') setEditando(false)
+              }}
+            />
+          ) : (
+            <button
+              className="userbar__name"
+              onClick={() => {
+                setRascunho(room.name)
+                setEditando(true)
+              }}
+              title="Trocar o nome"
+            >
+              {room.name}
+            </button>
+          )}
         </div>
 
         <VoiceControls room={room} />

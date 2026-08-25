@@ -92,3 +92,38 @@ create policy "imagens envio"
 -- leva anos, mas se um dia quiser podar o histórico:
 --
 --   delete from public.messages where created_at < now() - interval '1 year';
+
+-- ---------- membros ---------------------------------------------------------
+
+-- Sem isto não existe "offline": a lista de quem está fora só pode sair de um
+-- registro de quem já entrou alguma vez. O id vem do navegador e é guardado
+-- lá, então a mesma pessoa continua a mesma entre sessões.
+create table if not exists public.members (
+  id         text primary key,
+  room       text not null,
+  name       text not null,
+  last_seen  timestamptz not null default now()
+);
+
+create index if not exists members_room_idx on public.members (room, last_seen desc);
+
+alter table public.members enable row level security;
+
+drop policy if exists "membros leitura" on public.members;
+create policy "membros leitura"
+  on public.members for select
+  using (true);
+
+drop policy if exists "membros entrada" on public.members;
+create policy "membros entrada"
+  on public.members for insert
+  with check (length(name) <= 32 and length(room) <= 60 and length(id) <= 64);
+
+-- Entrar de novo atualiza nome e horário da mesma linha.
+drop policy if exists "membros atualizacao" on public.members;
+create policy "membros atualizacao"
+  on public.members for update
+  using (true)
+  with check (length(name) <= 32 and length(room) <= 60);
+
+grant select, insert, update on public.members to anon, authenticated;

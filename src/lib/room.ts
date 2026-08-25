@@ -42,6 +42,27 @@ export type ChatMsg = {
 export type Status = 'idle' | 'connecting' | 'connected' | 'reconnecting'
 
 const VOL_KEY = 'nearbycord:volumes'
+const ID_KEY = 'nearbycord:id'
+const NAME_KEY = 'nearbycord:name'
+
+export type Member = { id: string; name: string; lastSeen: number; online: boolean }
+
+/**
+ * A identidade vive no navegador e não muda entre sessões.
+ *
+ * Antes o id nascia a cada conexão, o que impedia qualquer noção de "membro":
+ * a mesma pessoa virava uma linha nova no banco toda vez que abria o app.
+ */
+function identidade(): string {
+  let id = localStorage.getItem(ID_KEY)
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem(ID_KEY, id)
+  }
+  return id
+}
+
+export const nomeSalvo = () => localStorage.getItem(NAME_KEY) ?? ''
 
 /** Volume é salvo por nome — o id do participante muda a cada sessão. */
 function loadVolumes(): Record<string, { volume: number; muted: boolean }> {
@@ -65,6 +86,8 @@ export class Room {
   error: string | null = null
 
   peers = new Map<string, Participant>()
+  /** Todo mundo que já entrou nesta sala — é daqui que sai a lista de offline. */
+  members: Member[] = []
   chat: ChatMsg[] = []
   unread = 0
   unreadMentions = 0
@@ -104,6 +127,8 @@ export class Room {
 
   constructor() {
     setLevelListener(() => this.emit())
+    this.meId = identidade()
+    this.name = nomeSalvo()
   }
 
   // -------- assinatura para o React ----------------------------------------
@@ -126,9 +151,7 @@ export class Room {
     this.roomId = roomId
     this.closing = false
     this.status = 'connecting'
-    // Sem servidor próprio, a identidade nasce aqui. É ela que decide quem
-    // oferece primeiro no WebRTC, então precisa ser estável na sessão.
-    if (!this.meId) this.meId = crypto.randomUUID()
+    localStorage.setItem(NAME_KEY, name)
     this.emit()
 
     const channel = supabase.channel(`room:${roomId}`, {
@@ -156,7 +179,7 @@ export class Room {
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        await this.loadHistory()
+        await Promise.all([this.loadHistory(), this.registerMember()])
         await channel.track(this.presence())
         this.status = 'connected'
         this.emit()
@@ -207,7 +230,7 @@ export class Room {
     void this.channel?.unsubscribe()
     this.channel = null
     this.status = 'idle'
-    this.meId = ''
+    // meId NÃO é zerado: agora é a identidade persistente da pessoa.
     this.emit()
   }
 
@@ -324,6 +347,11 @@ export class Room {
     }
     this.peers.set(id, p)
     if (this.inVoice && p.voice) this.ensureConn(p)
+
+    // Chegou alguém que o cadastro ainda não tinha: mostra já, sem esperar.
+    if (!this.members.some((m) => m.id === id)) {
+      this.members = [...this.members, { id, name: meta.name, lastSeen: Date.now(), online: true }]
+    }
   }
 
   // -------- chat -------------------------------------------------------------
@@ -339,6 +367,50 @@ export class Room {
       replyTo: row.reply_to,
       mentions: row.mentions,
     }
+  }
+
+  /** Anuncia-se como membro da sala e recarrega a lista completa. */
+  private async registerMember() {
+    const { error } = await supabase.from('members').upsert({
+      id: this.meId,
+      room: this.roomId,
+      name: this.name,
+      last_seen: new Date().toISOString(),
+    })
+    // Sem a tabela o app continua funcionando; só não há lista de offline.
+    if (error) {
+      console.warn('[room] members indisponível', error.message)
+      return
+    }
+    await this.loadMembers()
+  }
+
+  private async loadMembers() {
+    const { data } = await supabase
+      .from('members')
+      .select('*')
+      .eq('room', this.roomId)
+      .order('name')
+
+    if (!data) return
+    this.members = data.map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      lastSeen: new Date(r.last_seen as string).getTime(),
+      online: false,
+    }))
+    this.emit()
+  }
+
+  /** Troca o nome sem sair da sala: presence e cadastro acompanham. */
+  async setName(name: string) {
+    const novo = name.trim().slice(0, 32)
+    if (!novo || novo === this.name) return
+    this.name = novo
+    localStorage.setItem(NAME_KEY, novo)
+    this.publish()
+    this.emit()
+    await this.registerMember()
   }
 
   private async loadHistory() {
@@ -666,6 +738,23 @@ export class Room {
   }
 
   // -------- derivados -------------------------------------------------------
+
+  /**
+   * A lista da direita: quem está na voz, quem está online e quem está fora.
+   * Presence manda no estado atual; o cadastro completa com os ausentes.
+   */
+  get roster(): { naVoz: Participant[]; online: Participant[]; offline: Member[] } {
+    const presentes = new Set([...this.peers.keys(), this.meId])
+    return {
+      naVoz: this.voicePeers.sort((a, b) => a.name.localeCompare(b.name)),
+      online: [...this.peers.values()]
+        .filter((p) => !p.voice)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      offline: this.members
+        .filter((m) => !presentes.has(m.id))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }
+  }
 
   /** Só quem está no canal de voz. */
   get voicePeers(): Participant[] {

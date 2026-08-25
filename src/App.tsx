@@ -1,5 +1,5 @@
-import { useEffect, useReducer, useState } from 'react'
-import type { Room } from './lib/room'
+import { useEffect, useReducer, useRef, useState } from 'react'
+import { nomeSalvo, type Room } from './lib/room'
 import { Join } from './components/Join'
 import { Sidebar, type View } from './components/Sidebar'
 import { ChatView } from './components/ChatView'
@@ -15,7 +15,21 @@ export default function App({ room }: { room: Room }) {
   const [view, setView] = useState<View>('chat')
   const [showMembers, setShowMembers] = useState(true)
 
-  if (room.status === 'idle') return <Join room={room} />
+  // Quem já disse o nome uma vez não precisa dizer de novo: entra direto.
+  const entrou = useRef(false)
+  useEffect(() => {
+    if (entrou.current || room.status !== 'idle') return
+    const nome = nomeSalvo()
+    if (!nome) return
+    entrou.current = true
+    const sala = new URLSearchParams(location.search).get('sala') || 'geral'
+    void room.connect(nome, sala)
+  }, [room, room.status])
+
+  if (room.status === 'idle') {
+    // Só cai aqui na primeira vez, ou se o nome salvo tiver sido apagado.
+    return nomeSalvo() ? <div className="join" /> : <Join room={room} />
+  }
 
   const inCall = room.voicePeers.length + (room.inVoice ? 1 : 0)
 

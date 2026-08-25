@@ -1,10 +1,21 @@
 import { useState } from 'react'
-import type { Room, Participant } from '../lib/room'
+import type { Room, Participant, Member } from '../lib/room'
 import { MAX_GAIN } from '../lib/audio'
 import { Avatar } from './Media'
 import { MicOff, Screen, Speaker, SpeakerOff, Chevron } from './Icons'
 
-function MemberRow({
+const quandoFoiVisto = (ts: number) => {
+  const min = Math.floor((Date.now() - ts) / 60000)
+  if (min < 1) return 'agora'
+  if (min < 60) return `há ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `há ${h} h`
+  const d = Math.floor(h / 24)
+  return d === 1 ? 'ontem' : `há ${d} dias`
+}
+
+/** Alguém presente: dá para ajustar volume e ver o que está ligado. */
+function LinhaOnline({
   room,
   p,
   isMe,
@@ -76,25 +87,38 @@ function MemberRow({
   )
 }
 
-export function Members({ room }: { room: Room }) {
-  const all = [...room.peers.values()]
-  const inVoice = all.filter((p) => p.voice).sort((a, b) => a.name.localeCompare(b.name))
-  const online = all.filter((p) => !p.voice).sort((a, b) => a.name.localeCompare(b.name))
+/** Quem já entrou nesta sala alguma vez, mas não está aqui agora. */
+function LinhaOffline({ m }: { m: Member }) {
+  return (
+    <li className="member member--offline">
+      <div className="member__row" title={`Visto ${quandoFoiVisto(m.lastSeen)}`}>
+        <span className="member__avatar">
+          <Avatar name={m.name} size={32} />
+        </span>
+        <span className="member__name">{m.name}</span>
+        <span className="member__seen">{quandoFoiVisto(m.lastSeen)}</span>
+      </div>
+    </li>
+  )
+}
 
-  const voiceCount = inVoice.length + (room.inVoice ? 1 : 0)
-  const onlineCount = online.length + (room.inVoice ? 0 : 1)
+export function Members({ room }: { room: Room }) {
+  const { naVoz, online, offline } = room.roster
+
+  const totalVoz = naVoz.length + (room.inVoice ? 1 : 0)
+  const totalOnline = online.length + (room.inVoice ? 0 : 1)
 
   return (
     <aside className="members">
-      {voiceCount > 0 && (
+      {totalVoz > 0 && (
         <>
-          <p className="members__group">Na voz — {voiceCount}</p>
+          <p className="members__group">Na voz — {totalVoz}</p>
           <ul className="members__list">
             {room.inVoice && (
-              <MemberRow room={room} isMe name={room.name} speaking={room.speaking} />
+              <LinhaOnline room={room} isMe name={room.name} speaking={room.speaking} />
             )}
-            {inVoice.map((p) => (
-              <MemberRow
+            {naVoz.map((p) => (
+              <LinhaOnline
                 key={p.id}
                 room={room}
                 p={p}
@@ -106,13 +130,24 @@ export function Members({ room }: { room: Room }) {
         </>
       )}
 
-      <p className="members__group">Online — {onlineCount}</p>
+      <p className="members__group">Online — {totalOnline}</p>
       <ul className="members__list">
-        {!room.inVoice && <MemberRow room={room} isMe name={room.name} />}
+        {!room.inVoice && <LinhaOnline room={room} isMe name={room.name} />}
         {online.map((p) => (
-          <MemberRow key={p.id} room={room} p={p} name={p.name} />
+          <LinhaOnline key={p.id} room={room} p={p} name={p.name} />
         ))}
       </ul>
+
+      {offline.length > 0 && (
+        <>
+          <p className="members__group">Offline — {offline.length}</p>
+          <ul className="members__list">
+            {offline.map((m) => (
+              <LinhaOffline key={m.id} m={m} />
+            ))}
+          </ul>
+        </>
+      )}
     </aside>
   )
 }

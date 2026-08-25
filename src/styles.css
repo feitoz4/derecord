@@ -1563,3 +1563,43 @@ button:disabled {
   font-size: 12px;
   font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
 }
+
+/* trocar o próprio nome pela barra de baixo */
+.userbar__name {
+  text-align: left;
+  padding: 0;
+  transition: color 0.12s;
+}
+
+button.userbar__name:hover {
+  color: var(--accent);
+}
+
+.userbar__input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-0);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+
+/* quem não está online agora */
+.member--offline .member__row {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.member--offline .member__row:hover {
+  background: none;
+  color: var(--txt-dim);
+}
+
+.member__seen {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--txt-faint);
+}
