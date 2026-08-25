@@ -12,8 +12,13 @@ precisa de servidor de mídia.
 
 - **Hospedar:** GitHub Pages (site) + Supabase (sinalização, chat e imagens).
   Tudo no plano grátis, sem servidor para manter — veja abaixo.
-- **App para Windows:** [`desktop/README.md`](desktop/README.md) — Electron,
-  com seletor de tela próprio e ícone na bandeja.
+- **Instalar como aplicativo:** abra o site no Chrome ou Edge e use
+  *Instalar nearbycord* — janela própria, ícone na barra de tarefas, sem
+  barra de navegador. É o caminho recomendado.
+- **App para Windows (Electron):** [`desktop/README.md`](desktop/README.md) —
+  acrescenta atalho global e ícone na bandeja, mas o **Smart App Control** do
+  Windows 11 bloqueia executáveis sem assinatura, e não oferece como
+  contornar. Onde ele estiver ligado, use a instalação pelo navegador.
 
 ## Começar
 

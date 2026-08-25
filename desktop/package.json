@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "nearbycord para Windows",
+  "author": "Deryk",
   "main": "main.js",
   "scripts": {
     "icon": "node make-icon.mjs",
