@@ -94,7 +94,10 @@ export class Room {
   /** STUN/TURN vêm do servidor: a credencial de TURN é temporária. */
   iceServers: RTCIceServer[] = FALLBACK_ICE
 
+  /** Sinais que chegaram antes de o presence trazer a pessoa. */
+  private pendingSignals = new Map<string, SignalPayload[]>()
   private channel: RealtimeChannel | null = null
+  private rejoinTimer: ReturnType<typeof setTimeout> | null = null
   private listeners = new Set<() => void>()
   private volumes = loadVolumes()
   private closing = false
@@ -142,10 +145,7 @@ export class Room {
 
     channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
       if (payload?.to !== this.meId) return
-      const p = this.peers.get(payload.from)
-      // O sinal pode chegar antes do presence do outro lado ser processado.
-      if (p && !p.conn && this.inVoice) this.ensureConn(p)
-      void p?.conn?.handleSignal(payload.data as SignalPayload)
+      this.onSignal(payload.from, payload.data as SignalPayload)
     })
 
     channel.on(
@@ -160,16 +160,48 @@ export class Room {
         await channel.track(this.presence())
         this.status = 'connected'
         this.emit()
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        // O cliente do Supabase reconecta sozinho; aqui é só o aviso na tela.
-        if (!this.closing) this.status = 'reconnecting'
+        return
+      }
+
+      // CLOSED também entra aqui, e é o caso perigoso: o canal morre, mas a
+      // tela continuaria dizendo "ao vivo" enquanto nada mais trafega — nem
+      // presence, nem sinalização, nem chat. Sem reentrar, a chamada fica
+      // muda para sempre.
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (this.closing) return
+        this.status = 'reconnecting'
         this.emit()
+        this.scheduleRejoin()
       }
     })
   }
 
+  /** Reentra no canal do zero. O mesh cai junto e se refaz pelo presence. */
+  private scheduleRejoin() {
+    if (this.rejoinTimer || this.closing) return
+    this.rejoinTimer = setTimeout(async () => {
+      this.rejoinTimer = null
+      if (this.closing) return
+
+      this.peers.forEach((p) => this.dropConn(p))
+      this.peers.clear()
+      this.pendingSignals.clear()
+
+      const antigo = this.channel
+      this.channel = null
+      if (antigo) {
+        try {
+          await supabase.removeChannel(antigo)
+        } catch {}
+      }
+      await this.connect(this.name, this.roomId)
+    }, 2000)
+  }
+
   disconnect() {
     this.closing = true
+    if (this.rejoinTimer) clearTimeout(this.rejoinTimer)
+    this.rejoinTimer = null
     this.leaveVoice()
     this.peers.clear()
     void this.channel?.unsubscribe()
@@ -190,6 +222,40 @@ export class Room {
   /** Republica meu estado (voz, microfone, câmera, tela) para o grupo. */
   private publish() {
     void this.channel?.track(this.presence())
+  }
+
+  /**
+   * Presence e broadcast são canais distintos e chegam fora de ordem: a oferta
+   * de quem acabou de entrar na voz costuma passar na frente do presence que
+   * anuncia essa mesma entrada.
+   *
+   * Por isso o sinal não pode depender do presence. Receber um sinal já é
+   * prova de que a pessoa está na chamada; e se ela ainda nem apareceu, o
+   * sinal fica guardado em vez de ser descartado. Sem isto, quem perdesse a
+   * corrida ficava esperando uma resposta que nunca vinha — em silêncio.
+   */
+  private onSignal(from: string, data: SignalPayload) {
+    if (!this.inVoice) return
+
+    const p = this.peers.get(from)
+    if (!p) {
+      const fila = this.pendingSignals.get(from) ?? []
+      fila.push(data)
+      this.pendingSignals.set(from, fila.slice(-25))
+      return
+    }
+
+    if (!p.voice) p.voice = true
+    this.ensureConn(p)
+    void p.conn?.handleSignal(data)
+  }
+
+  /** Aplica o que chegou cedo demais, agora que a conexão existe. */
+  private flushSignals(p: Participant) {
+    const fila = this.pendingSignals.get(p.id)
+    if (!fila) return
+    this.pendingSignals.delete(p.id)
+    for (const data of fila) void p.conn?.handleSignal(data)
   }
 
   private signalTo(to: string, data: SignalPayload) {
@@ -370,6 +436,8 @@ export class Room {
     if (cam) p.conn.setTrack('cam', cam)
     if (scr) p.conn.setTrack('screen', scr)
     if (scrAudio) p.conn.setTrack('screenAudio', scrAudio)
+
+    this.flushSignals(p)
   }
 
   private dropConn(p: Participant) {
@@ -377,6 +445,7 @@ export class Room {
     p.conn?.close()
     p.audio = null
     p.conn = null
+    this.pendingSignals.delete(p.id)
   }
 
   private onPeerChange(id: string) {

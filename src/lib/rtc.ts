@@ -53,6 +53,8 @@ export class PeerConn {
   private makingOffer = false
   private ignoreOffer = false
   private settingRemoteAnswer = false
+  private retry: ReturnType<typeof setInterval> | null = null
+  private retries = 0
 
   constructor(
     id: string,
@@ -70,6 +72,7 @@ export class PeerConn {
         this.makingOffer = true
         await this.pc.setLocalDescription()
         this.signal({ description: this.pc.localDescription!.toJSON() })
+        this.watchOffer()
       } catch (err) {
         console.error('[rtc] negotiationneeded', err)
       } finally {
@@ -118,12 +121,49 @@ export class PeerConn {
     return this.pc.connectionState
   }
 
-  /** Depois de qualquer setRemoteDescription: pega os slots pela ordem. */
+  /**
+   * A sinalização trafega por um canal de broadcast, sem entrega garantida
+   * nem ordem. Se a oferta se perder, os dois lados ficam esperando em
+   * silêncio — um por uma resposta, o outro por uma oferta que nunca chegou.
+   * Reenviar algumas vezes custa pouco e evita a chamada morta.
+   */
+  private watchOffer() {
+    this.clearWatch()
+    this.retries = 0
+    this.retry = setInterval(() => {
+      const esperando =
+        this.pc.signalingState === 'have-local-offer' && !this.pc.remoteDescription
+      if (!esperando || this.retries >= 4) return this.clearWatch()
+      this.retries++
+      this.signal({ description: this.pc.localDescription!.toJSON() })
+    }, 4000)
+  }
+
+  private clearWatch() {
+    if (this.retry) clearInterval(this.retry)
+    this.retry = null
+  }
+
+  /**
+   * Depois de setRemoteDescription: pega os slots pela ordem e **abre o envio**.
+   *
+   * Transceiver criado a partir de uma oferta remota nasce `recvonly`, e
+   * `replaceTrack` não muda isso — não renegociar é exatamente a graça dele.
+   * Sem forçar `sendrecv` aqui, este lado recebe áudio mas nunca transmite:
+   * a faixa fica presa ao emissor, aparentemente saudável, e não sai um pacote.
+   *
+   * Precisa ser antes de montar a resposta, para que ela já anuncie sendrecv
+   * e não exija uma segunda rodada de negociação.
+   */
   private adoptSlots() {
     if (this.slots.mic) return
     const tx = this.pc.getTransceivers()
     if (tx.length < SLOT_ORDER.length) return
-    SLOT_ORDER.forEach((name, i) => (this.slots[name] = tx[i]))
+
+    SLOT_ORDER.forEach((name, i) => {
+      this.slots[name] = tx[i]
+      if (tx[i].direction !== 'sendrecv') tx[i].direction = 'sendrecv'
+    })
     this.flushPending()
   }
 
@@ -147,6 +187,7 @@ export class PeerConn {
         this.settingRemoteAnswer = desc.type === 'answer'
         await this.pc.setRemoteDescription(desc)
         this.settingRemoteAnswer = false
+        this.clearWatch()
         this.adoptSlots()
 
         if (desc.type === 'offer') {
@@ -177,6 +218,7 @@ export class PeerConn {
   }
 
   close() {
+    this.clearWatch()
     this.pc.onnegotiationneeded = null
     this.pc.onicecandidate = null
     this.pc.ontrack = null

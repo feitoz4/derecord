@@ -110,11 +110,15 @@ export class RemoteAudio {
 
     // Chrome só faz o áudio de uma stream WebRTC "fluir" se ela estiver
     // presa a um elemento de mídia, mesmo quando quem toca é o Web Audio.
+    // O elemento também vai para o documento: elemento solto funciona no
+    // Chrome, mas é terreno pouco garantido entre navegadores.
     this.el = new Audio()
     this.el.srcObject = stream
     this.el.autoplay = true
     this.el.volume = 1
-    void this.el.play().catch(() => {})
+    this.el.style.display = 'none'
+    document.body.append(this.el)
+    void this.el.play().catch((err) => console.warn('[audio] play bloqueado', err))
 
     this.source = ac.createMediaStreamSource(stream)
     this.gain = ac.createGain()
