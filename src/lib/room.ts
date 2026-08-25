@@ -41,7 +41,7 @@ export type ChatMsg = {
 
 export type Status = 'idle' | 'connecting' | 'connected' | 'reconnecting'
 
-const VOL_KEY = 'derecord:volumes'
+const VOL_KEY = 'nearbycord:volumes'
 
 /** Volume é salvo por nome — o id do participante muda a cada sessão. */
 function loadVolumes(): Record<string, { volume: number; muted: boolean }> {

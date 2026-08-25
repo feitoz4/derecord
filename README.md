@@ -1,4 +1,4 @@
-# derecord
+# nearbycord
 
 Dois canais para um grupo: **#chat** (texto) e **voz** (chamada com vídeo e
 tela). WebRTC em **mesh** (peer-to-peer, sem servidor de mídia) — o Supabase só

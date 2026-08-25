@@ -198,7 +198,7 @@ function pickSource(sources) {
 function setupTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png'))
   tray = new Tray(icon.resize({ width: 16, height: 16 }))
-  tray.setToolTip('derecord')
+  tray.setToolTip('nearbycord')
 
   const show = () => {
     win.show()

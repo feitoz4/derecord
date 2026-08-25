@@ -1,4 +1,4 @@
-# derecord para Windows
+# nearbycord para Windows
 
 Um invólucro Electron em volta do app hospedado. O que ele acrescenta sobre
 abrir no navegador:

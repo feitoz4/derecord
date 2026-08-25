@@ -3,7 +3,7 @@ import type { Room } from '../lib/room'
 import { isSecure } from '../lib/media'
 import { configured } from '../lib/supabase'
 
-const NAME_KEY = 'derecord:name'
+const NAME_KEY = 'nearbycord:name'
 
 export function Join({ room }: { room: Room }) {
   const params = new URLSearchParams(location.search)
@@ -26,7 +26,7 @@ export function Join({ room }: { room: Room }) {
   return (
     <div className="join">
       <form className="join__card" onSubmit={submit}>
-        <h1 className="join__logo">derecord</h1>
+        <h1 className="join__logo">nearbycord</h1>
         <p className="join__sub">Chamada de voz, vídeo e tela para o grupo.</p>
 
         <label className="field">

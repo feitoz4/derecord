@@ -1,8 +1,8 @@
 {
-  "name": "derecord-desktop",
+  "name": "nearbycord-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "derecord para Windows",
+  "description": "nearbycord para Windows",
   "main": "main.js",
   "scripts": {
     "icon": "node make-icon.mjs",
@@ -15,8 +15,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.derecord.app",
-    "productName": "derecord",
+    "appId": "com.nearbycord.app",
+    "productName": "nearbycord",
     "files": [
       "main.js",
       "preload.js",
@@ -34,7 +34,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "derecord"
+      "shortcutName": "nearbycord"
     }
   }
 }
