@@ -107,12 +107,10 @@ Se o zip estiver lá e inteiro, extraia na mão:
 ```powershell
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip  = (Get-ChildItem -Recurse "$env:LOCALAPPDATA\electron\Cache" -Filter *.zip)[0].FullName
-$dist = "$PWD
-ode_modules\electron\dist"
+$dist = Join-Path $PWD "node_modules\electron\dist"
 Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
 [IO.Compression.ZipFile]::ExtractToDirectory($zip, $dist)
-Set-Content "$PWD
-ode_modules\electron\path.txt" "electron.exe" -NoNewline
+Set-Content (Join-Path $PWD "node_modules\electron\path.txt") "electron.exe" -NoNewline
 ```
 
 A causa de fundo é o projeto morar no OneDrive. Movê-lo para fora (`C:\dev\`,
