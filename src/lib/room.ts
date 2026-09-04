@@ -179,10 +179,23 @@ export class Room {
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        await Promise.all([this.loadHistory(), this.registerMember()])
-        await channel.track(this.presence())
+        // Presença PRIMEIRO. É ela que faz as pessoas se enxergarem, e não
+        // pode ficar atrás de nenhuma ida ao banco: se o histórico ou o
+        // cadastro demorarem ou falharem, quem entrou vira invisível para
+        // todo mundo — dentro do canal, mas sem nunca ter dito que chegou.
+        try {
+          await channel.track(this.presence())
+        } catch (err) {
+          console.error('[room] falhou ao anunciar presença', err)
+        }
+
         this.status = 'connected'
         this.emit()
+
+        // Histórico e cadastro são complementos: falham sozinhos, sem
+        // derrubar a chamada.
+        void this.loadHistory().catch((e) => console.warn('[room] histórico', e))
+        void this.registerMember().catch((e) => console.warn('[room] membros', e))
         return
       }
 
